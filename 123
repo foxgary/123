@@ -1,0 +1,131 @@
+import rospy
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist
+import sys, select, os
+
+if os.name == 'nt': #windows os name
+  import msvcrt
+else:
+  import tty, termios
+
+# maximum parameter define
+waffle_max_linear_vel = 0.26
+waffle_max_angular_vel = 1.82
+linear_step = 0.02
+angular_step = 0.2
+
+msg = '''
+Turtlebot3
+------------------
+Moving around
+      w                             
+  a   s   d                    u 
+       x                        j 
+w: Forward, x: Backward, a: Turn Left, d: Turn Right, s : stop 
+u : increasing vel, j : decreasing vel
+ctrl+c to quit
+'''
+err = '''
+Failed to communication
+'''
+def getKey():
+  if os.name == 'nt':
+    return msvcrt.getch()  # jump get KEY
+
+  tty.setraw(sys.stdin.fileno())
+  rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+  if rlist:
+    key = sys.stdin.read(1)
+  else:
+    key = ''
+
+  termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+  return key
+def cal_control_vel(orgin,max,step,final):
+  if orgin > 0:
+    if (orgin + step) >= max:
+      final = max
+    else:
+      final = orgin + step
+  else:
+    if (orgin - step) <= -max:
+      final = -max
+    else:
+      final = orgin - step
+  return final
+
+if __name__ == "__main__":
+  if os.name != 'nt':
+    settings = termios.tcgetattr(sys.stdin)
+
+  rospy.init_node('turtlebot3_teleop')
+  pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
+
+  turtlebot3_model = rospy.get_param("model", "burger")
+  status = 0
+  linear_vel = 0.0
+  angular_vel = 0.0
+  control_linear_vel = 0.0
+  control_angular_vel = 0.0
+  step = 0.0
+
+
+  try:
+    print(msg)
+    while (1):
+      key = getKey()
+
+      if key == 'w':
+        linear_vel = 0.1
+      elif key == 'x':
+        linear_vel = -0.1
+      elif key == 'a':
+        angular_vel = 1
+      elif key == 'd':
+        angular_vel = -1
+      elif key == 's':
+        linear_vel = 0
+        angular_vel = 0
+      elif key == 'u':
+        step = step + linear_step
+      elif key == 'j':
+        step = step - linear_step
+      else:
+        if (key == '\x03'):
+          break
+
+      status = status + 1
+      if status == 20:
+        print(msg)
+        status = 0
+
+      print("currently:\tlinear vel %s\t angular vel %s " %(linear_vel , angular_vel))
+
+      twist = Twist()
+      control_linear_vel = cal_control_vel(linear_vel,waffle_max_linear_vel,step,control_linear_vel)
+      twist.linear.x = control_linear_vel
+      twist.linear.y = 0.0
+      twist.linear.z = 0.0
+
+      control_angular_vel =cal_control_vel(angular_vel, waffle_max_angular_vel,step,control_angular_vel)
+      twist.angular.x = 0.0
+      twist.angular.y = 0.0
+      twist.angular.z = control_angular_vel
+
+      pub.publish(twist)
+
+  except:
+    print(err)
+
+  finally:
+    twist = Twist()
+    twist.linear.x = 0.0
+    twist.linear.y = 0.0
+    twist.linear.z = 0.0
+    twist.angular.x = 0.0
+    twist.angular.y = 0.0
+    twist.angular.z = 0.0
+    pub.publish(twist)
+
+  if os.name != 'nt':
+    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
